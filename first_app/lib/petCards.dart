@@ -374,14 +374,14 @@ class FlippedCard extends StatelessWidget {
   }
 }
 
-class AddPetComponent extends StatefulWidget {
+class AddPetComponent extends ConsumerStatefulWidget {
   const AddPetComponent({Key? key}) : super(key: key);
 
   @override
-  State<AddPetComponent> createState() => _AddPetComponent();
+  _AddPetComponent createState() => _AddPetComponent();
 }
 
-class _AddPetComponent extends State<AddPetComponent> {
+class _AddPetComponent extends ConsumerState<AddPetComponent> {
   final petNameController = TextEditingController();
   final descController = TextEditingController();
 
@@ -412,6 +412,9 @@ class _AddPetComponent extends State<AddPetComponent> {
               bytes,
             );
       }
+
+      ref.refresh(fetchAllPets);
+      
 
       Navigator.of(context).pop();
       //refetch pets data
