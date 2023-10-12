@@ -1,17 +1,17 @@
-import 'package:first_app/model/PetModel.dart';
+import 'package:first_app/providers/petModelProvider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
 
-class Reminders extends StatefulWidget {
+class Reminders extends ConsumerStatefulWidget {
   const Reminders({Key? key}) : super(key: key);
 
   @override
-  State<Reminders> createState() => _Reminders();
+  _Reminders createState() => _Reminders();
 }
 
-class _Reminders extends State<Reminders> {
+class _Reminders extends ConsumerState<Reminders> {
   String? petId;
-  late PetModel petModel;
 
   final ScrollController _scrollController = ScrollController();
   bool _showFab = false;
@@ -19,12 +19,10 @@ class _Reminders extends State<Reminders> {
   @override
   void initState() {
     super.initState();
-    petModel = Provider.of<PetModel>(context, listen: false);
-    petId = petModel.petId;
-    print('BEFORE FETCHING REMINDERS: ${petModel.isLoading}');
-    petModel
-        .fetchDataReminders(petId!)
-        .then((_) => print('AFTER FETCHING REMINDERS: ${petModel.isLoading}'));
+    //get PETID from riverpod
+    petId = ref.read(petIDProvider);
+    ref.refresh(fetchImagesByPetID(petId));
+
     //set scroll listener
     _scrollController.addListener(() {
       _scrollListener();
@@ -52,70 +50,64 @@ class _Reminders extends State<Reminders> {
 
   @override
   Widget build(BuildContext context) {
+    //watch riverpod providers
+    final AsyncValue<List<dynamic>> petReminders =
+        ref.watch(fetchReminderByID(petId));
     return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.pop(context);
-          },
-        ),
-        actions: <Widget>[
-          IconButton(
-            icon: const Icon(Icons.add),
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
             onPressed: () {
-              showDialog(
-                  context: context,
-                  builder: (BuildContext context) {
-                    return AlertDialog(
-                      content: SizedBox(
-                        child: Wrap(
-                          children: <Widget>[
-                            //reminder component
-                            AddReminderComponent(petId: petId)
-                          ],
-                        ),
-                      ),
-                    );
-                  });
+              Navigator.pop(context);
             },
-          )
-        ],
-      ),
-      body: Consumer<PetModel>(builder: (context, petModel, child) {
-        if (petModel.isLoading) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
-        } else {
-          return SingleChildScrollView(
-              controller: _scrollController,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: context
-                    .watch<PetModel>()
-                    .reminders
-                    .map((reminder) => ReminderComponent(
-                          pet_id: petId!,
-                          phone: reminder['phone'],
-                          reminder: reminder['reminder'],
-                        ))
-                    .toList(),
-              ));
-        }
-      }),
-      floatingActionButton: _showFab
-          ? FloatingActionButton(
+          ),
+          actions: <Widget>[
+            IconButton(
+              icon: const Icon(Icons.add),
               onPressed: () {
-                _scrollController.animateTo(0,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeIn);
+                showDialog(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return AlertDialog(
+                        content: SizedBox(
+                          child: Wrap(
+                            children: <Widget>[
+                              //reminder component
+                              AddReminderComponent(petId: petId)
+                            ],
+                          ),
+                        ),
+                      );
+                    });
               },
-              backgroundColor: Colors.orange[200],
-              child: const Icon(Icons.arrow_upward, color: Colors.white),
             )
-          : Container(),
-    );
+          ],
+        ),
+        floatingActionButton: _showFab
+            ? FloatingActionButton(
+                onPressed: () {
+                  _scrollController.animateTo(0,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeIn);
+                },
+                backgroundColor: Colors.orange[200],
+                child: const Icon(Icons.arrow_upward, color: Colors.white),
+              )
+            : Container(),
+        body: SingleChildScrollView(
+          child: switch (petReminders) {
+            AsyncData(:final value) => Column(
+                  children: value.map((reminder) {
+                return (ReminderComponent(
+                  pet_id: reminder['petID'].toString(),
+                  phone: reminder['phone'],
+                  reminder: reminder['reminder'],
+                ));
+              }).toList()),
+            AsyncError(:final error) => Text(error.toString()),
+            _ => const CircularProgressIndicator(),
+          },
+        ));
   }
 }
 
@@ -209,7 +201,7 @@ class _ReminderComponent extends State<ReminderComponent> {
   }
 }
 
-class AddReminderComponent extends StatefulWidget {
+class AddReminderComponent extends ConsumerStatefulWidget {
   const AddReminderComponent({Key? key, required this.petId}) : super(key: key);
 
   final String? petId;
@@ -218,35 +210,48 @@ class AddReminderComponent extends StatefulWidget {
   _AddReminderComponent createState() => _AddReminderComponent();
 }
 
-class _AddReminderComponent extends State<AddReminderComponent> {
+class _AddReminderComponent extends ConsumerState<AddReminderComponent> {
   //form stuff
   final _formKey = GlobalKey<FormState>();
   final _reminderController = TextEditingController();
   final _phoneController = TextEditingController();
 
-  //set petModel = this
-  late PetModel petModel;
-
   @override
   void initState() {
     super.initState();
-    petModel = Provider.of<PetModel>(context, listen: false);
   }
 
   //submit reponse
   void submitResponse(BuildContext context) async {
     if (_formKey.currentState!.validate()) {
-      await petModel.addReminder(
-          _reminderController.text, _phoneController.text, widget.petId!, _time);
+      //create reminder object with form data, make sure to convert TimeOfDay to time var acceptable by supabase
+      //convert TimeOfDay to to DateTime
+      final timeAsDateTime = DateTime(
+        DateTime.now().year,
+        DateTime.now().month,
+        DateTime.now().day,
+        _time.hour,
+        _time.minute,
+      );
+      final reminder = Reminder(
+        petID: int.parse(widget.petId!),
+        reminder: _reminderController.text,
+        phone: _phoneController.text,
+        send_time: timeAsDateTime,
+      );
+      //add reminder to pet using riverpod
+      await ref.read(addReminderByPetID(reminder));
+
+      ref.refresh(fetchReminderByID(widget.petId!));
+
       Navigator.of(context).pop();
     }
   }
 
   var newTime;
-    TimeOfDay _time = const TimeOfDay(hour: 13, minute: 15);
+  TimeOfDay _time = const TimeOfDay(hour: 13, minute: 15);
 
   void _selectTime() async {
-    
     newTime = await showTimePicker(
       context: context,
       initialTime: _time,
@@ -293,12 +298,14 @@ class _AddReminderComponent extends State<AddReminderComponent> {
                         ElevatedButton(
                             onPressed: () {
                               _selectTime();
-                            }, child: newTime == null
+                            },
+                            child: newTime == null
                                 ? const Text('Choose Time')
                                 : Text(newTime.format(context))),
                         ElevatedButton(
                             onPressed: () {
                               submitResponse(context);
+
                             },
                             child: const Text('Add'))
                       ],

@@ -1,12 +1,9 @@
-import 'dart:io';
-
 import 'package:first_app/loginPage.dart';
-import 'package:first_app/model/PetModel.dart';
 import 'package:first_app/profile.dart';
 import 'package:flutter/material.dart';
 import 'package:first_app/petCards.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 final supabase = Supabase.instance.client;
@@ -23,8 +20,8 @@ void main() async {
       anonKey: key);
 
   
-  runApp(ChangeNotifierProvider(
-      create: (context) => PetModel(), child: const MyApp()));
+  runApp(const ProviderScope(child: MyApp()));
+
 }
 
 class MyApp extends StatelessWidget {

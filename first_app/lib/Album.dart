@@ -1,62 +1,32 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:first_app/main.dart';
-import 'package:first_app/model/PetModel.dart';
+import 'package:first_app/providers/petModelProvider.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class Album extends StatefulWidget {
+class Album extends ConsumerStatefulWidget {
   const Album({Key? key}) : super(key: key);
 
-
   @override
-  State<Album> createState() => _Album();
+  _Album createState() => _Album();
 }
 
-class _Album extends State<Album> {
+class _Album extends ConsumerState<Album> {
   final user = supabase.auth.currentUser?.id;
-
-  late PetModel petModel;
 
   late String petID;
 
   @override
   void initState() {
     super.initState();
-    petModel = Provider.of<PetModel>(context, listen: false);
-    petID = petModel.petId;
-    //MY PET ID
-    print('MY PETS ID IS $petID');
-    petModel.fetchPetImages(petID);
-    // fetchImage();
+    //get pet ID from riverpod
+    petID = ref.read(petIDProvider);
   }
-
-  // Future<void> fetchImage() async {
-  //   try {
-  //     // Get all images from storage and create private signed URL and store in _images
-  //     final response =
-  //         await supabase.storage.from('petImages').list(path: '$user/');
-  // Now create a signed URL for each image and store in _images
-  //     for (var element in response) {
-  //       if (!element.name.endsWith('/')) {
-  //         var path = '$user/${element.name}';
-  //         var signedUrl = await supabase.storage
-  //             .from('petImages')
-  //             .createSignedUrl(path, 60);
-  //         if (!petModel.images.contains(signedUrl)) {
-  //           petModel.images.add(signedUrl);
-  //         }
-  //         print(petModel.images);
-  //       } else {
-  //         print(element.name);
-  //       }
-  //     }
-  //   } catch (e) {
-  //     print('e: $e');
-  //   }
-  // }
 
   @override
   Widget build(BuildContext context) {
+    //watch riverpod providers
+    final AsyncValue petImages = ref.watch(fetchImagesByPetID(petID));
     return Scaffold(
         appBar: AppBar(
           title: const Text('Album'),
@@ -66,14 +36,37 @@ class _Album extends State<Album> {
         body: GridView.count(
           crossAxisCount: 3,
           children: [
-            for (var image in context.watch<PetModel>().petImages)
-              Center(
-                  child: ClipRRect(
-                      child: CachedNetworkImage(
-                        imageUrl: image,
-                        fit: BoxFit.cover,
-              )))
+            switch (petImages) {
+              AsyncData(:final value) => value != null ?
+                  Center(
+                      child: ClipRRect(
+                          child: CachedNetworkImage(
+                    imageUrl: value,
+                    fit: BoxFit.cover,
+                  ))) : const Center(child: Text('This Pet Has No Images')),
+              AsyncError() => const Text('Error'),
+              _ => const Text('Loading'),
+            }
           ],
-        ));
+        ),
+        floatingActionButton:
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.camera_alt_rounded),
+              onPressed: () {
+              }
+            ),
+            IconButton(
+              icon: const Icon(Icons.photo_album),
+              onPressed: () {
+
+              }
+            )
+          ],
+        )
+            
+        );
   }
 }

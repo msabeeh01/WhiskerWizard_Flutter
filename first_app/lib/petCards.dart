@@ -4,20 +4,19 @@ import "package:cached_network_image/cached_network_image.dart";
 import "package:first_app/Album.dart";
 import "package:first_app/Reminders.dart";
 import "package:first_app/main.dart";
-import "package:first_app/model/PetModel.dart";
+import "package:first_app/providers/petModelProvider.dart";
 import "package:flutter/material.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:image_picker/image_picker.dart";
-import "package:provider/provider.dart";
 
-class PetCard extends StatefulWidget {
+class PetCard extends ConsumerStatefulWidget {
   const PetCard({Key? key}) : super(key: key);
 
   @override
-  State<PetCard> createState() => _PetCard();
+  _PetCard createState() => _PetCard();
 }
 
-class _PetCard extends State<PetCard> {
-  late PetModel petModel;
+class _PetCard extends ConsumerState<PetCard> {
   final user = supabase.auth.currentUser?.id;
   String _searchQuery = '';
 
@@ -27,13 +26,10 @@ class _PetCard extends State<PetCard> {
   @override
   void initState() {
     super.initState();
-    petModel = Provider.of<PetModel>(context, listen: false);
-    Future.delayed(Duration.zero, () {
-      fetchData();
-    });
     _scrollController.addListener(() {
       _scrollListener();
     });
+    ref.refresh(fetchAllPets);
   }
 
   @override
@@ -42,16 +38,7 @@ class _PetCard extends State<PetCard> {
     super.dispose();
   }
 
-  Future<void> fetchData() async {
-    petModel.isLoading = true;
-    final response = await supabase
-        .from('pets')
-        .select()
-        .eq('user_id', supabase.auth.currentUser?.id);
-    petModel.pets = response;
-    petModel.isLoading = false;
-  }
-
+//scrolling rules
   void _scrollListener() {
     if (_scrollController.offset > 5 && !_showFab) {
       setState(() {
@@ -66,6 +53,9 @@ class _PetCard extends State<PetCard> {
 
   @override
   Widget build(BuildContext context) {
+    //watch riverpod providers
+    final AsyncValue<List<dynamic>> allPets = ref.watch(fetchAllPets);
+
     return Scaffold(
         body: Column(children: [
           Container(
@@ -93,27 +83,28 @@ class _PetCard extends State<PetCard> {
           Expanded(
               child: RefreshIndicator(
             onRefresh: () async {
-              await petModel.fetchData();
+              ref.refresh(fetchAllPets);
             },
             child: SingleChildScrollView(
               controller: _scrollController,
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: context.watch<PetModel>().isLoading
-                    ? [const CircularProgressIndicator()]
-                    : context
-                        .watch<PetModel>()
-                        .pets
-                        .where((pet) => pet['pet_name']
-                            .toLowerCase()
-                            .contains(_searchQuery))
-                        .map((pet) => PetCardComponent(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    //show image, if no image, show text
+                    switch (allPets) {
+                      AsyncData(:final value) => Column(
+                            children: value.map((pet) {
+                          return PetCardComponent(
                               name: pet['pet_name'],
-                              desc: pet['pet_desc'],
                               pet_id: pet['id'].toString(),
-                            ))
-                        .toList(),
-              ),
+                              desc: pet['pet_desc']);
+                        }).toList()),
+                      //generate pet card for each pet
+                      AsyncError(:final error, :final stackTrace) =>
+                        Text(error.toString()),
+                      _ => const CircularProgressIndicator(),
+                    }
+                  ]),
             ),
           )),
         ]),
@@ -159,6 +150,7 @@ class PetCardComponent extends StatefulWidget {
   const PetCardComponent(
       {Key? key, required this.name, required this.pet_id, required this.desc})
       : super(key: key);
+
   final String name;
   final String desc;
   final String pet_id;
@@ -169,13 +161,10 @@ class PetCardComponent extends StatefulWidget {
 
 class _PetCardComponentState extends State<PetCardComponent> {
   bool? _showIcons = false;
-  late PetModel petModel;
 
   @override
   void initState() {
     super.initState();
-    petModel = Provider.of<PetModel>(context, listen: false);
-    petModel.fetchPetSplashImage(widget.name);
   }
 
   @override
@@ -208,7 +197,11 @@ class _PetCardComponentState extends State<PetCardComponent> {
                                     height: 230,
                                     child: Stack(
                                         children: _showIcons == true
-                                            ? [FlippedCard(pet_id: widget.pet_id,)]
+                                            ? [
+                                                FlippedCard(
+                                                  pet_id: widget.pet_id,
+                                                )
+                                              ]
                                             : [
                                                 ImageAndText(
                                                     name: widget.name,
@@ -224,7 +217,7 @@ class _PetCardComponentState extends State<PetCardComponent> {
   }
 }
 
-class ImageAndText extends StatelessWidget {
+class ImageAndText extends ConsumerWidget {
   const ImageAndText({Key? key, required this.name, required this.desc})
       : super(key: key);
 
@@ -232,23 +225,22 @@ class ImageAndText extends StatelessWidget {
   final String desc;
 
   @override
-  Widget build(BuildContext context) {
-    PetModel petModel = Provider.of<PetModel>(context, listen: false);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AsyncValue image = ref.watch(fetchImageByName(name));
+
     return Stack(fit: StackFit.expand, children: [
       ClipRRect(
-        borderRadius: BorderRadius.circular(15),
-        child: petModel.images.isNotEmpty
-            ? CachedNetworkImage(
-                imageUrl: petModel.images.firstWhere(
-                    (image) => image['pet_name'] == name,
-                    orElse: () => {
-                          'signedUrl': 'https://picsum.photos/id/237/200/300'
-                        })['signedUrl'],
-                width: double.maxFinite,
+          borderRadius: BorderRadius.circular(15),
+          //wait for data
+          child: switch (image) {
+            AsyncData(:final value) => value != null ? CachedNetworkImage(
+                imageUrl: value,
                 fit: BoxFit.cover,
-              )
-            : Container(), // Replace this with your placeholder widget // Add a fallback widget here
-      ),
+              ) : Text('NO IMAGE'),
+            AsyncError(:final error, :final stackTrace) =>
+              Text(error.toString()),
+            _ => const CircularProgressIndicator(),
+          }),
       Positioned(
           bottom: 0,
           left: 0,
@@ -278,13 +270,14 @@ class ImageAndText extends StatelessWidget {
   }
 }
 
-class CardIconBar extends StatelessWidget {
+class CardIconBar extends ConsumerWidget {
   const CardIconBar({Key? key, required this.pet_id}) : super(key: key);
 
   final pet_id;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final petIDState = ref.watch(petIDProvider);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 15),
       child: Column(
@@ -298,7 +291,9 @@ class CardIconBar extends StatelessWidget {
                 color: Colors.white,
               ),
               onPressed: () {
-                Provider.of<PetModel>(context, listen: false).petId = pet_id;
+                //set petID
+                ref.read(petIDProvider.notifier).state = pet_id;
+                // Provider.of<PetModel>(context, listen: false).petId = pet_id;
                 Navigator.push(context,
                     MaterialPageRoute(builder: (context) => const Reminders()));
               },
@@ -310,7 +305,9 @@ class CardIconBar extends StatelessWidget {
               icon: const Icon(Icons.photo_album),
               color: Colors.white,
               onPressed: () {
-                Provider.of<PetModel>(context, listen: false).petId = pet_id;
+                //set petID and print after
+                ref.read(petIDProvider.notifier).state = pet_id;
+                // Provider.of<PetModel>(context, listen: false).petId = pet_id;
                 Navigator.push(context,
                     MaterialPageRoute(builder: (context) => const Album()));
               },
@@ -337,7 +334,6 @@ class FlippedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    PetModel petModel = Provider.of<PetModel>(context, listen: false);
     //pet ID
     return Align(
       alignment: Alignment.center,
@@ -349,7 +345,7 @@ class FlippedCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 10),
             child: IconButton(
               onPressed: () {
-                petModel.deletePet(pet_id.toString());
+                //delete pet
               },
               style: ButtonStyle(
                 backgroundColor: MaterialStateProperty.all<Color>(Colors.white),
@@ -419,7 +415,6 @@ class _AddPetComponent extends State<AddPetComponent> {
 
       Navigator.of(context).pop();
       //refetch pets data
-      Provider.of<PetModel>(context, listen: false).fetchData();
     }
   }
 
