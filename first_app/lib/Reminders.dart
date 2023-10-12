@@ -1,3 +1,4 @@
+import 'package:first_app/main.dart';
 import 'package:first_app/providers/petModelProvider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -234,13 +235,14 @@ class _AddReminderComponent extends ConsumerState<AddReminderComponent> {
         _time.minute,
       );
       final reminder = Reminder(
+        user_id: supabase.auth.currentUser!.id,
         petID: int.parse(widget.petId!),
         reminder: _reminderController.text,
         phone: _phoneController.text,
         send_time: timeAsDateTime,
       );
       //add reminder to pet using riverpod
-      await ref.read(addReminderByPetID(reminder));
+      ref.read(addReminderByPetID(reminder));
 
       ref.refresh(fetchReminderByID(widget.petId!));
 

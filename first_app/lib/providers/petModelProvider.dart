@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:first_app/main.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -11,8 +14,38 @@ final fetchAllPets = FutureProvider((ref) async {
   return res as List<dynamic>;
 });
 
-final deleteByID = FutureProvider.family((ref, id) async {
-  await supabase.from('pets').delete().eq('id', id);
+class deleteParams {
+  final String id;
+  final String name;
+
+  deleteParams({required this.id, required this.name});
+
+}
+
+final deleteByID = FutureProvider.family<dynamic, deleteParams>((ref, del) async {
+  //delete from pets table
+  await supabase.from('pets').delete().eq('id', del.id);
+  //delete from reminders
+  await supabase.from('reminders').delete().eq('petID', del.id);
+
+  //delete corresponding images from storage
+  final userID = supabase.auth.currentUser?.id;
+  await supabase.storage
+      .from('petImages')
+      .remove(['$userID/${userID}${del.name}']);
+
+  //list then delete corresponding images and folder from storage
+  final res = await supabase.storage.from('petImages').list(path: '$userID/${del.id}');
+  for (var file in res) {
+    await supabase.storage
+        .from('petImages')
+        .remove(['$userID/${del.id}/${file.name}']);
+  }
+
+  await supabase.storage.from('petImages').remove(['$userID/${del.id}/']);
+
+  //invalidate fetch all pets
+  ref.refresh(fetchAllPets);
 });
 
 final fetchImageByName = FutureProvider.family((ref, name) async {
@@ -41,20 +74,32 @@ final fetchImagesByPetID = FutureProvider.family((ref, id) async {
   final res =
       await supabase.storage.from('petImages').list(path: '$userID/$id');
   //print full path for one
+  List<dynamic> signedURLs = [];
   for (var file in res) {
     //create signedURL for all
     final signedURL = await supabase.storage
         .from('petImages')
         .createSignedUrl('$userID/$id/${file.name}', 60);
-    return signedURL;
+    signedURLs.add(signedURL);
   }
-  //return res as List<dynamic>;
+  return signedURLs;
+});
+
+final uploadPetImage = FutureProvider.family((ref, XFile? file) async{
+  final userID = supabase.auth.currentUser?.id;
+  final petID = ref.read(petIDProvider);
+  final fileName = file!.name;
+  //XFILE conversion
+  final bytes = await File(file!.path).readAsBytes();
+  await supabase.storage.from('petImages').uploadBinary('$userID/$petID/${fileName}', bytes);
+  ref.refresh(fetchImagesByPetID(petID));
 });
 
 class Reminder {
   final int petID;
   final String reminder;
   final String phone;
+  final String user_id;
   final DateTime send_time;
 
   Reminder({
@@ -62,9 +107,11 @@ class Reminder {
     required this.reminder,
     required this.phone,
     required this.send_time,
+    required this.user_id,
   });
 
   Map<String, dynamic> toJson() => {
+    'user_id': user_id,
     'petID': petID,
     'reminder': reminder,
     'phone': phone,
@@ -72,13 +119,12 @@ class Reminder {
   };
 }
 
-
 //provider to store reminder
-final addReminderByPetID =
-    FutureProvider.family<dynamic, Reminder>((_, reminder) async {
+final addReminderByPetID = FutureProvider.family<dynamic, Reminder>((_, reminder) async {
   try {
     final timeString = DateFormat('HH:mm:ss').format(reminder.send_time);
     final res = await supabase.from('reminders').insert({
+      'user_id': reminder.user_id,
       'petID': reminder.petID,
       'reminder': reminder.reminder,
       'phone': reminder.phone,

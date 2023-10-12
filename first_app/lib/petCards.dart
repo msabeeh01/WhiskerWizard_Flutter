@@ -200,6 +200,7 @@ class _PetCardComponentState extends State<PetCardComponent> {
                                             ? [
                                                 FlippedCard(
                                                   pet_id: widget.pet_id,
+                                                  pet_name: widget.name,
                                                 )
                                               ]
                                             : [
@@ -327,14 +328,14 @@ class CardIconBar extends ConsumerWidget {
   }
 }
 
-class FlippedCard extends StatelessWidget {
-  const FlippedCard({Key? key, required this.pet_id}) : super(key: key);
+class FlippedCard extends ConsumerWidget {
+  const FlippedCard({Key? key, required this.pet_id, required this.pet_name}) : super(key: key);
 
   final pet_id;
+  final pet_name;
 
   @override
-  Widget build(BuildContext context) {
-    //pet ID
+  Widget build(BuildContext context, WidgetRef ref) {
     return Align(
       alignment: Alignment.center,
       child: Row(
@@ -345,7 +346,11 @@ class FlippedCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 10),
             child: IconButton(
               onPressed: () {
-                //delete pet
+                //delete pet by calling riverpod async func
+                final pet = deleteParams(
+                    id: pet_id,
+                    name: pet_name);
+                ref.read(deleteByID(pet));
               },
               style: ButtonStyle(
                 backgroundColor: MaterialStateProperty.all<Color>(Colors.white),
@@ -391,7 +396,7 @@ class _AddPetComponent extends ConsumerState<AddPetComponent> {
   XFile? imageFile;
 
   //user vars
-  var user = supabase.auth.currentUser?.id;
+  var user =  supabase.auth.currentUser?.id;
 
   //function submit form data to supabase
   void submitForm(BuildContext context) async {
@@ -407,7 +412,7 @@ class _AddPetComponent extends ConsumerState<AddPetComponent> {
       //insert image into supabase
       if (imageFile != null) {
         final bytes = await File(imageFile!.path).readAsBytes();
-        final res = await supabase.storage.from('petImages').uploadBinary(
+        await supabase.storage.from('petImages').uploadBinary(
               '$user/$user${petNameController.text}',
               bytes,
             );
