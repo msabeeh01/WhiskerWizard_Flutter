@@ -4,7 +4,6 @@ import 'package:first_app/main.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 final fetchAllPets = FutureProvider((ref) async {
   final res = await supabase
@@ -69,6 +68,13 @@ final fetchReminderByID = FutureProvider.family((ref, id) async {
   return res as List<dynamic>;
 });
 
+final deleteReminderByID = FutureProvider.family((ref, id) async {
+  await supabase.from('reminders').delete().eq('id', id);
+  //refresh all reminders
+  final petID = ref.read(petIDProvider);
+  ref.refresh(fetchReminderByID(petID));
+});
+
 final fetchImagesByPetID = FutureProvider.family((ref, id) async {
   final userID = supabase.auth.currentUser?.id;
   final res =
@@ -120,10 +126,11 @@ class Reminder {
 }
 
 //provider to store reminder
-final addReminderByPetID = FutureProvider.family<dynamic, Reminder>((_, reminder) async {
+final addReminderByPetID = FutureProvider.family<dynamic, Reminder>((ref, reminder) async {
   try {
+    final petID = ref.read(petIDProvider);
     final timeString = DateFormat('HH:mm:ss').format(reminder.send_time);
-    final res = await supabase.from('reminders').insert({
+    await supabase.from('reminders').insert({
       'user_id': reminder.user_id,
       'petID': reminder.petID,
       'reminder': reminder.reminder,
@@ -131,9 +138,7 @@ final addReminderByPetID = FutureProvider.family<dynamic, Reminder>((_, reminder
       'send_time': timeString
     });
     //refresh reminders
-    _.refresh(fetchReminderByID(reminder.petID));
-    print(res);
-    return res;
+    ref.invalidate(fetchReminderByID(petID));
   } catch (e) {
     print(e);
   }
@@ -141,3 +146,6 @@ final addReminderByPetID = FutureProvider.family<dynamic, Reminder>((_, reminder
 
 //provider to store petID
 final petIDProvider = StateProvider((ref) => '');
+
+//provider to store showIcons state
+final showIconsProvider = StateProvider((ref) => false);

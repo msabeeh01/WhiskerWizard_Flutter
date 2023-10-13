@@ -55,7 +55,7 @@ class _PetCard extends ConsumerState<PetCard> {
   Widget build(BuildContext context) {
     //watch riverpod providers
     final AsyncValue<List<dynamic>> allPets = ref.watch(fetchAllPets);
-
+    final filteredPets = allPets.whenData((pets) => pets.where((pet) => pet['pet_name'].toLowerCase().contains(_searchQuery)).toList());
     return Scaffold(
         body: Column(children: [
           Container(
@@ -83,7 +83,7 @@ class _PetCard extends ConsumerState<PetCard> {
           Expanded(
               child: RefreshIndicator(
             onRefresh: () async {
-              ref.refresh(fetchAllPets);
+              ref.invalidate(fetchAllPets);
             },
             child: SingleChildScrollView(
               controller: _scrollController,
@@ -91,7 +91,7 @@ class _PetCard extends ConsumerState<PetCard> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     //show image, if no image, show text
-                    switch (allPets) {
+                    switch (filteredPets) {
                       AsyncData(:final value) => Column(
                             children: value.map((pet) {
                           return PetCardComponent(
@@ -100,7 +100,7 @@ class _PetCard extends ConsumerState<PetCard> {
                               desc: pet['pet_desc']);
                         }).toList()),
                       //generate pet card for each pet
-                      AsyncError(:final error, :final stackTrace) =>
+                      AsyncError(:final error) =>
                         Text(error.toString()),
                       _ => const CircularProgressIndicator(),
                     }
@@ -146,7 +146,7 @@ class _PetCard extends ConsumerState<PetCard> {
   }
 }
 
-class PetCardComponent extends StatefulWidget {
+class PetCardComponent extends ConsumerStatefulWidget {
   const PetCardComponent(
       {Key? key, required this.name, required this.pet_id, required this.desc})
       : super(key: key);
@@ -156,15 +156,23 @@ class PetCardComponent extends StatefulWidget {
   final String pet_id;
 
   @override
-  State<PetCardComponent> createState() => _PetCardComponentState();
+  _PetCardComponentState createState() => _PetCardComponentState();
 }
 
-class _PetCardComponentState extends State<PetCardComponent> {
+class _PetCardComponentState extends ConsumerState<PetCardComponent> {
   bool? _showIcons = false;
 
   @override
   void initState() {
     super.initState();
+  }
+
+  Function hideFlippedCard(){
+    return(){
+      setState(() {
+        _showIcons = false;
+      });
+    };
   }
 
   @override
@@ -201,6 +209,7 @@ class _PetCardComponentState extends State<PetCardComponent> {
                                                 FlippedCard(
                                                   pet_id: widget.pet_id,
                                                   pet_name: widget.name,
+                                                  onHide: hideFlippedCard(),
                                                 )
                                               ]
                                             : [
@@ -234,10 +243,12 @@ class ImageAndText extends ConsumerWidget {
           borderRadius: BorderRadius.circular(15),
           //wait for data
           child: switch (image) {
-            AsyncData(:final value) => value != null ? CachedNetworkImage(
-                imageUrl: value,
-                fit: BoxFit.cover,
-              ) : Text('NO IMAGE'),
+            AsyncData(:final value) => value != null
+                ? CachedNetworkImage(
+                    imageUrl: value,
+                    fit: BoxFit.cover,
+                  )
+                : Text('NO IMAGE'),
             AsyncError(:final error, :final stackTrace) =>
               Text(error.toString()),
             _ => const CircularProgressIndicator(),
@@ -245,26 +256,29 @@ class ImageAndText extends ConsumerWidget {
       Positioned(
           bottom: 0,
           left: 0,
-          child: Container(
-            color: Colors.orange.withOpacity(0.3),
-            padding: const EdgeInsets.all(10),
-            width: MediaQuery.of(context).size.width,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 30,
-                      fontWeight: FontWeight.bold,
-                    )),
-                Text(desc,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 25,
-                      fontWeight: FontWeight.bold,
-                    ))
-              ],
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(15),
+            child: Container(
+              color: Colors.orange.withOpacity(0.3),
+              padding: const EdgeInsets.all(10),
+              width: MediaQuery.of(context).size.width,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 30,
+                        fontWeight: FontWeight.bold,
+                      )),
+                  Text(desc,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 25,
+                        fontWeight: FontWeight.bold,
+                      ))
+                ],
+              ),
             ),
           ))
     ]);
@@ -278,7 +292,7 @@ class CardIconBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final petIDState = ref.watch(petIDProvider);
+    ref.watch(petIDProvider);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 15),
       child: Column(
@@ -329,10 +343,12 @@ class CardIconBar extends ConsumerWidget {
 }
 
 class FlippedCard extends ConsumerWidget {
-  const FlippedCard({Key? key, required this.pet_id, required this.pet_name}) : super(key: key);
+  FlippedCard({Key? key, required this.pet_id, required this.pet_name, required this.onHide})
+      : super(key: key);
 
   final pet_id;
   final pet_name;
+  final Function onHide;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -347,10 +363,10 @@ class FlippedCard extends ConsumerWidget {
             child: IconButton(
               onPressed: () {
                 //delete pet by calling riverpod async func
-                final pet = deleteParams(
-                    id: pet_id,
-                    name: pet_name);
+                final pet = deleteParams(id: pet_id, name: pet_name);
                 ref.read(deleteByID(pet));
+                onHide();
+                
               },
               style: ButtonStyle(
                 backgroundColor: MaterialStateProperty.all<Color>(Colors.white),
@@ -396,7 +412,7 @@ class _AddPetComponent extends ConsumerState<AddPetComponent> {
   XFile? imageFile;
 
   //user vars
-  var user =  supabase.auth.currentUser?.id;
+  var user = supabase.auth.currentUser?.id;
 
   //function submit form data to supabase
   void submitForm(BuildContext context) async {
@@ -419,7 +435,6 @@ class _AddPetComponent extends ConsumerState<AddPetComponent> {
       }
 
       ref.refresh(fetchAllPets);
-      
 
       Navigator.of(context).pop();
       //refetch pets data

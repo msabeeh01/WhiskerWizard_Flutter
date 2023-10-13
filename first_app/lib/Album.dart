@@ -30,7 +30,7 @@ class _Album extends ConsumerState<Album> {
     super.initState();
     //get pet ID from riverpod
     petID = ref.read(petIDProvider);
-    ref.refresh(fetchImagesByPetID(petID));
+    ref.invalidate(fetchImagesByPetID(petID));
   }
 
   @override

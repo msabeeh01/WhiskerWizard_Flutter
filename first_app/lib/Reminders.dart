@@ -103,6 +103,7 @@ class _Reminders extends ConsumerState<Reminders> {
                   pet_id: reminder['petID'].toString(),
                   phone: reminder['phone'],
                   reminder: reminder['reminder'],
+                  reminder_id: reminder['id'].toString(),
                 ));
               }).toList()),
             AsyncError(:final error) => Text(error.toString()),
@@ -112,23 +113,25 @@ class _Reminders extends ConsumerState<Reminders> {
   }
 }
 
-class ReminderComponent extends StatefulWidget {
+class ReminderComponent extends ConsumerStatefulWidget {
   const ReminderComponent(
       {Key? key,
       required this.pet_id,
       required this.phone,
-      required this.reminder})
+      required this.reminder,
+      required this.reminder_id})
       : super(key: key);
   //reminder vars
   final String reminder;
   final String phone;
   final String pet_id;
+  final String reminder_id;
 
   @override
   _ReminderComponent createState() => _ReminderComponent();
 }
 
-class _ReminderComponent extends State<ReminderComponent> {
+class _ReminderComponent extends ConsumerState<ReminderComponent> {
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -178,7 +181,10 @@ class _ReminderComponent extends State<ReminderComponent> {
                               Icons.delete_outline,
                               color: Colors.red[300],
                             ),
-                            onPressed: () {},
+                            onPressed: () {
+                              //delete reminder
+                              ref.read(deleteReminderByID(widget.reminder_id));
+                            },
                           ),
                           IconButton(
                             splashColor: Colors.red,
@@ -217,10 +223,6 @@ class _AddReminderComponent extends ConsumerState<AddReminderComponent> {
   final _reminderController = TextEditingController();
   final _phoneController = TextEditingController();
 
-  @override
-  void initState() {
-    super.initState();
-  }
 
   //submit reponse
   void submitResponse(BuildContext context) async {
@@ -243,9 +245,7 @@ class _AddReminderComponent extends ConsumerState<AddReminderComponent> {
       );
       //add reminder to pet using riverpod
       ref.read(addReminderByPetID(reminder));
-
       ref.refresh(fetchReminderByID(widget.petId!));
-
       Navigator.of(context).pop();
     }
   }

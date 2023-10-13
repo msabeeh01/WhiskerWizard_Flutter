@@ -1,5 +1,4 @@
 import 'package:first_app/loginPage.dart';
-import 'package:first_app/profile.dart';
 import 'package:flutter/material.dart';
 import 'package:first_app/petCards.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -78,22 +77,7 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       body: IndexedStack(
         index: _selectedIndex,
-        children: const <Widget>[PetCard(), Profile()],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.pets),
-            label: 'Pets',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people),
-            label: 'Profile',
-          ),
-        ],
-        currentIndex: _selectedIndex,
-        selectedItemColor: Colors.amber[800],
-        onTap: _onItemTapped,
+        children: const <Widget>[PetCard()],
       ),
     );
   }
